@@ -14,7 +14,7 @@ MakeHuman python entry-point.
 
 **Copyright(c):**      MakeHuman Team 2016-2020
 
-**Licensing:**         AGPL3 
+**Licensing:**         AGPL3
 
     This file is part of MakeHuman Community (www.makehumancommunity.org).
 
@@ -40,27 +40,35 @@ This file downloads asset from github
 
 import sys
 import os
-import subprocess
 import shutil
 
-__author__ = "Joel Palmius"
-__copyright__ = "Copyright 2020 Data Collection AB and listed authors"
-__license__ = "AGPLv3"
-__maintainer__ = "Joel Palmius"
-
-syspath = ["./", "./lib", "./apps", "./shared", "./apps/gui","./core"]
+# ensure we can import our bundled libraries before anything else
+syspath = ["./", "./lib", "./apps", "./shared", "./apps/gui", "./core"]
 syspath.extend(sys.path)
 sys.path = syspath
 
 import getpath
 import gitutils
 
-class DownloadAssetsGit:
+__author__ = "Joel Palmius"
+__copyright__ = "Copyright 2020 Data Collection AB and listed authors"
+__license__ = "AGPLv3"
+__maintainer__ = "Joel Palmius"
 
-    _git_official_assets_repo = "https://github.com/makehumancommunity/makehuman-assets.git"
+syspath = ["./", "./lib", "./apps", "./shared", "./apps/gui", "./core"]
+syspath.extend(sys.path)
+sys.path = syspath
+
+
+class DownloadAssetsGit:
+    _git_official_assets_repo = (
+        "https://github.com/makehumancommunity/makehuman-assets.git"
+    )
     _git_official_assets_branch = "master"
 
-    _makehuman_data_directory = os.path.abspath(os.path.realpath(getpath.getSysDataPath()))
+    _makehuman_data_directory = os.path.abspath(
+        os.path.realpath(getpath.getSysDataPath())
+    )
 
     _user_dir = None
     _user_data_dir = None
@@ -83,8 +91,10 @@ class DownloadAssetsGit:
         self._user_data_dir = getpath.getDataPath()
         if not os.path.isdir(self._user_data_dir):
             os.makedirs(self._user_data_dir)
-            
-        self._git_official_clone_location = os.path.abspath(os.path.realpath(os.path.join(self._user_dir,'official_assets')))
+
+        self._git_official_clone_location = os.path.abspath(
+            os.path.realpath(os.path.join(self._user_dir, "official_assets"))
+        )
 
         self.readOverridesFromEnvironment()
 
@@ -93,13 +103,35 @@ class DownloadAssetsGit:
             sys.exit(1)
 
         if not gitutils.hasGitLFSSupport():
-            print("\n\n\nGIT LFS not detected. This routine requires LFS. See https://git-lfs.github.com/\n\n")
+            print(
+                "\n\n\nGIT LFS not detected. This routine requires LFS. See https://git-lfs.github.com/\n\n"
+            )
             sys.exit(1)
 
         if os.path.isdir(self._git_official_clone_location):
-            gitutils.pullRepo(self._git_official_clone_location,self._git_official_assets_branch)
+            gitutils.pullRepo(
+                self._git_official_clone_location, self._git_official_assets_branch
+            )
         else:
-            gitutils.cloneRepo(self._git_official_assets_repo,self._git_official_clone_location,self._git_official_assets_branch,extraargs=['--depth=1'])
+            # Skip LFS downloads during clone to avoid failures when the repo
+            # has exceeded its LFS budget. Large binary assets (textures etc.)
+            # that are tracked by LFS will be left as pointer stubs and simply
+            # won't be copied to the data directory.
+            prev_skip = os.environ.get("GIT_LFS_SKIP_SMUDGE")
+            os.environ["GIT_LFS_SKIP_SMUDGE"] = "1"
+            try:
+                gitutils.cloneRepo(
+                    self._git_official_assets_repo,
+                    self._git_official_clone_location,
+                    self._git_official_assets_branch,
+                    extraargs=["--depth=1"],
+                )
+            finally:
+                # Restore the previous value (or remove if it wasn't set)
+                if prev_skip is None:
+                    os.environ.pop("GIT_LFS_SKIP_SMUDGE", None)
+                else:
+                    os.environ["GIT_LFS_SKIP_SMUDGE"] = prev_skip
 
         self.copyOfficialAssets()
 
@@ -107,13 +139,15 @@ class DownloadAssetsGit:
 
         os.chdir(self._git_official_clone_location)
 
-        for root, dirs, files in os.walk('base'): 
-            
+        for root, dirs, files in os.walk("base"):
             for name in dirs:
                 fullname = name
                 if root != "base":
-                    fullname = os.path.relpath(os.path.join(root,name),os.path.join(self._git_official_clone_location,"base"))
-                dest = os.path.join(self._makehuman_data_directory,fullname)
+                    fullname = os.path.relpath(
+                        os.path.join(root, name),
+                        os.path.join(self._git_official_clone_location, "base"),
+                    )
+                dest = os.path.join(self._makehuman_data_directory, fullname)
                 if not os.path.isdir(dest):
                     print("Creating directory " + dest)
                     os.makedirs(dest)
@@ -121,61 +155,101 @@ class DownloadAssetsGit:
             for name in files:
                 fullname = name
                 if root != "base":
-                    a = os.path.abspath(os.path.join(root,name))
-                    b = os.path.abspath(os.path.join(self._git_official_clone_location,"base"))
-                    fullname = os.path.relpath(a,b)
+                    a = os.path.abspath(os.path.join(root, name))
+                    b = os.path.abspath(
+                        os.path.join(self._git_official_clone_location, "base")
+                    )
+                    fullname = os.path.relpath(a, b)
 
-                source = os.path.abspath(os.path.join(self._git_official_clone_location,"base",fullname))
-                dest = os.path.abspath(os.path.join(self._makehuman_data_directory,fullname))
+                source = os.path.abspath(
+                    os.path.join(self._git_official_clone_location, "base", fullname)
+                )
+                dest = os.path.abspath(
+                    os.path.join(self._makehuman_data_directory, fullname)
+                )
+
+                # Skip LFS pointer stubs (small text files starting with
+                # "version https://git-lfs.github.com/spec/") so we don't
+                # copy useless placeholders into the data directory.
+                try:
+                    with open(source, "rb") as f:
+                        header = f.read(256)
+                    if header.startswith(b"version https://git-lfs.github.com/spec/"):
+                        print("Skipping LFS stub: " + source)
+                        continue
+                except Exception:
+                    pass
 
                 print("copying " + source + " to " + dest)
-                shutil.copy2(source,dest)
+                shutil.copy2(source, dest)
 
         if self._copy_debug_assets:
-
-            for root, dirs, files in os.walk('debug'): 
-            
+            for root, dirs, files in os.walk("debug"):
                 for name in dirs:
                     fullname = name
                     if root != "debug":
-                        fullname = os.path.relpath(os.path.join(root,name),os.path.join(self._git_official_clone_location,"debug"))
-                    dest = os.path.join(self._makehuman_data_directory,fullname)
+                        fullname = os.path.relpath(
+                            os.path.join(root, name),
+                            os.path.join(self._git_official_clone_location, "debug"),
+                        )
+                    dest = os.path.join(self._makehuman_data_directory, fullname)
                     if not os.path.isdir(dest):
                         print("Creating directory " + dest)
                         os.makedirs(dest)
-    
+
                 for name in files:
                     fullname = name
                     if root != "debug":
-                        fullname = os.path.relpath(os.path.join(root,name),os.path.join(self._git_official_clone_location,"debug"))
-    
-                    source = os.path.abspath(os.path.join(self._git_official_clone_location,"debug",fullname))
-                    dest = os.path.abspath(os.path.join(self._makehuman_data_directory,fullname))
-    
-                    print("copying " + source + " to " + dest)
-                    shutil.copy2(source,dest)
+                        fullname = os.path.relpath(
+                            os.path.join(root, name),
+                            os.path.join(self._git_official_clone_location, "debug"),
+                        )
 
+                    source = os.path.abspath(
+                        os.path.join(
+                            self._git_official_clone_location, "debug", fullname
+                        )
+                    )
+                    dest = os.path.abspath(
+                        os.path.join(self._makehuman_data_directory, fullname)
+                    )
+
+                    # Skip LFS pointer stubs here too
+                    try:
+                        with open(source, "rb") as f:
+                            header = f.read(256)
+                        if header.startswith(
+                            b"version https://git-lfs.github.com/spec/"
+                        ):
+                            print("Skipping LFS stub: " + source)
+                            continue
+                    except Exception:
+                        pass
+
+                    print("copying " + source + " to " + dest)
+                    shutil.copy2(source, dest)
 
     def readOverridesFromEnvironment(self):
 
-        if 'GIT_OFFICIAL_ASSETS_REPO' in os.environ:
-            self._git_official_assets_repo = os.environ['GIT_OFFICIAL_ASSETS_REPO']
+        if "GIT_OFFICIAL_ASSETS_REPO" in os.environ:
+            self._git_official_assets_repo = os.environ["GIT_OFFICIAL_ASSETS_REPO"]
 
-        if 'GIT_OFFICIAL_ASSETS_BRANCH' in os.environ:
-            self._git_official_assets_branch = os.environ['GIT_OFFICIAL_ASSETS_BRANCH']
+        if "GIT_OFFICIAL_ASSETS_BRANCH" in os.environ:
+            self._git_official_assets_branch = os.environ["GIT_OFFICIAL_ASSETS_BRANCH"]
 
-        if 'MAKEHUMAN_DATA_DIRECTORY' in os.environ:
-            self._makehuman_data_directory = os.environ['MAKEHUMAN_DATA_DIRECTORY']
+        if "MAKEHUMAN_DATA_DIRECTORY" in os.environ:
+            self._makehuman_data_directory = os.environ["MAKEHUMAN_DATA_DIRECTORY"]
 
-        if 'GIT_OFFICIAL_CLONE_LOCATION' in os.environ:
-            self._git_official_clone_location = os.environ['GIT_OFFICIAL_CLONE_LOCATION']
+        if "GIT_OFFICIAL_CLONE_LOCATION" in os.environ:
+            self._git_official_clone_location = os.environ[
+                "GIT_OFFICIAL_CLONE_LOCATION"
+            ]
 
-        if 'DRY_RUN' in os.environ:
+        if "DRY_RUN" in os.environ:
             self._dry_run = True
 
-        if 'COPY_DEBUG_ASSETS' in os.environ:
+        if "COPY_DEBUG_ASSETS" in os.environ:
             self._copy_debug_assets = True
 
 
 DownloadAssetsGit()
-

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-""" 
+"""
 **Project Name:**      MakeHuman
 
 **Product Home Page:** http://www.makehumancommunity.org/
@@ -45,9 +45,10 @@ from typing import Callable, List
 
 import OpenGL
 import OpenGL.GLU
-OpenGL.ERROR_CHECKING = G.args.get('debugopengl', False)
-OpenGL.ERROR_LOGGING = G.args.get('debugopengl', False)
-OpenGL.FULL_LOGGING = G.args.get('fullloggingopengl', False)
+
+OpenGL.ERROR_CHECKING = G.args.get("debugopengl", False)
+OpenGL.ERROR_LOGGING = G.args.get("debugopengl", False)
+OpenGL.FULL_LOGGING = G.args.get("fullloggingopengl", False)
 OpenGL.ERROR_ON_COPY = True
 from OpenGL.GL import *
 from OpenGL.GLU import *
@@ -68,7 +69,8 @@ g_primitiveMap = [GL_POINTS, GL_LINES, GL_TRIANGLES, GL_QUADS]
 TEX_NOT_FOUND = False
 MAX_TEXTURE_UNITS = 0
 
-#TODO: Investigate possibility of decreasing performance impact. Better name?
+
+# TODO: Investigate possibility of decreasing performance impact. Better name?
 def safeRun(func: Callable, *args, fallbacks: List[Callable] = None, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -78,11 +80,11 @@ def safeRun(func: Callable, *args, fallbacks: List[Callable] = None, **kwargs):
             return fallback(*args, **kwargs)
 
 
-def grabScreen(x, y, width, height, filename = None, productionRender=False):
+def grabScreen(x, y, width, height, filename=None, productionRender=False):
     if width <= 0 or height <= 0:
         raise RuntimeError("width or height is 0")
 
-    log.debug('grabScreen: %d %d %d %d', x, y, width, height)
+    log.debug("grabScreen: %d %d %d %d", x, y, width, height)
 
     # Draw before grabbing, to make sure we grab a rendering and not a picking buffer
     draw(productionRender)
@@ -102,24 +104,24 @@ def grabScreen(x, y, width, height, filename = None, productionRender=False):
     sx1 = sx0 + rwidth
     rheight = sy1 - sy0
 
-    surface = np.empty((rheight, rwidth, 3), dtype = np.uint8)
+    surface = np.empty((rheight, rwidth, 3), dtype=np.uint8)
 
-    log.debug('glReadPixels: %d %d %d %d', sx0, sy0, rwidth, rheight)
+    log.debug("glReadPixels: %d %d %d %d", sx0, sy0, rwidth, rheight)
 
     glReadPixels(sx0, sy0, rwidth, rheight, GL_RGB, GL_UNSIGNED_BYTE, surface)
 
     if width != rwidth or height != rheight:
-        surf = np.zeros((height, width, 3), dtype = np.uint8) + 127
-        surf[...] = surface[:1,:1,:]
+        surf = np.zeros((height, width, 3), dtype=np.uint8) + 127
+        surf[...] = surface[:1, :1, :]
         dx0 = (width - rwidth) // 2
         dy0 = (height - rheight) // 2
         dx1 = dx0 + rwidth
         dy1 = dy0 + rheight
-        surf[dy0:dy1,dx0:dx1] = surface
+        surf[dy0:dy1, dx0:dx1] = surface
         surface = surf
 
-    surface = np.ascontiguousarray(surface[::-1,:,:])
-    surface = Image(data = surface)
+    surface = np.ascontiguousarray(surface[::-1, :, :])
+    surface = Image(data=surface)
 
     if filename is not None:
         surface.save(filename)
@@ -127,51 +129,83 @@ def grabScreen(x, y, width, height, filename = None, productionRender=False):
 
     return surface
 
+
 pickingBuffer = None
 pickingBufferDirty = True
 
+
+def _hasValidGLContext():
+    """Return True if PyOpenGL currently has a valid context available.
+
+    ``OpenGL.contextdata.getContext`` will raise an Error if there is no
+    current context, which happens on startup/shutdown and when the Qt
+    widget has been destroyed.  Guard callers to avoid spurious stack
+    traces such as "Attempt to retrieve context when no valid context".
+    """
+    try:
+        from OpenGL import contextdata
+
+        contextdata.getContext()
+        return True
+    except Exception:
+        return False
+
+
 def updatePickingBuffer():
-    width = G.windowWidth
-    height = G.windowHeight
-    rwidth = (width + 3) // 4 * 4
+    # if the GL context has been lost for any reason just skip the whole
+    # process; the picking buffer will be rebuilt next time a valid context
+    # exists.
+    if not _hasValidGLContext():
+        return
 
-    # Resize the buffer in case the window size has changed
-    global pickingBuffer
-    if pickingBuffer is None or pickingBuffer.shape != (height, rwidth, 3):
-        pickingBuffer = np.empty((height, rwidth, 3), dtype = np.uint8)
+    try:
+        width = G.windowWidth
+        height = G.windowHeight
+        rwidth = (width + 3) // 4 * 4
 
-    # Turn off lighting
-    glDisable(GL_LIGHTING)
+        # Resize the buffer in case the window size has changed
+        global pickingBuffer
+        if pickingBuffer is None or pickingBuffer.shape != (height, rwidth, 3):
+            pickingBuffer = np.empty((height, rwidth, 3), dtype=np.uint8)
 
-    # Turn off antialiasing
-    glDisable(GL_BLEND)
-    if have_multisample:
-        glDisable(GL_MULTISAMPLE)
+        # Turn off lighting
+        glDisable(GL_LIGHTING)
 
-    # Clear screen
-    glClearColor(0.0, 0.0, 0.0, 0.0)
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        # Turn off antialiasing
+        glDisable(GL_BLEND)
+        if have_multisample:
+            glDisable(GL_MULTISAMPLE)
 
-    drawMeshes(True)
+        # Clear screen
+        glClearColor(0.0, 0.0, 0.0, 0.0)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-    # Make sure the data is 1 byte aligned
-    glPixelStorei(GL_PACK_ALIGNMENT, 1)
-    #glFlush()
-    #glFinish()
+        drawMeshes(True)
 
-    glReadPixels(0, 0, rwidth, height, GL_RGB, GL_UNSIGNED_BYTE, pickingBuffer)
+        # Make sure the data is 1 byte aligned
+        glPixelStorei(GL_PACK_ALIGNMENT, 1)
+        # glFlush()
+        # glFinish()
 
-    # Turn on antialiasing
-    glEnable(GL_BLEND)
-    if have_multisample:
-        glEnable(GL_MULTISAMPLE)
+        glReadPixels(0, 0, rwidth, height, GL_RGB, GL_UNSIGNED_BYTE, pickingBuffer)
 
-    # restore lighting
-    glEnable(GL_LIGHTING)
+        # Turn on antialiasing
+        glEnable(GL_BLEND)
+        if have_multisample:
+            glEnable(GL_MULTISAMPLE)
 
-    # draw()
-    global pickingBufferDirty
-    pickingBufferDirty = False
+        # restore lighting
+        glEnable(GL_LIGHTING)
+
+        # draw()
+        global pickingBufferDirty
+        pickingBufferDirty = False
+    except Exception:
+        # if anything goes wrong while drawing the picking buffer just log it
+        # and give up; the next call to getPickedColor() will attempt again.
+        log.error("updatePickingBuffer", exc_info=True)
+        pickingBufferDirty = True
+
 
 def markPickingBufferDirty():
     """
@@ -181,7 +215,8 @@ def markPickingBufferDirty():
     global pickingBufferDirty
     pickingBufferDirty = True
 
-def getPickedColor(x = None, y = None):
+
+def getPickedColor(x=None, y=None):
     if x is None or y is None:
         pos = getMousePos()
         if pos is None:
@@ -199,7 +234,8 @@ def getPickedColor(x = None, y = None):
     if pickingBuffer is None or pickingBufferDirty:
         updatePickingBuffer()
 
-    return tuple(pickingBuffer[y,x,:])
+    return tuple(pickingBuffer[y, x, :])
+
 
 def queryDepth(x, y):
     if x is None or y is None:
@@ -226,7 +262,13 @@ def queryDepth(x, y):
     glReadPixels(x, y, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, sz)
     return sz[0]
 
+
 def reshape(w, h):
+    # if the context has already gone away (window closing, etc) nothing to
+    # do; PyOpenGL will raise an error if we try to use it without one.
+    if not _hasValidGLContext():
+        return
+
     try:
         # Prevent a division by zero when minimising the window
         if h == 0:
@@ -242,7 +284,8 @@ def reshape(w, h):
 
         updatePickingBuffer()
     except Exception:
-        log.error('gl.reshape', exc_info=True)
+        log.error("gl.reshape", exc_info=True)
+
 
 def getMousePos():
     """
@@ -251,47 +294,60 @@ def getMousePos():
     """
     return G.canvas.getMousePos()
 
+
 def drawBegin():
     # clear the screen & depth buffer
     glClearColor(G.clearColor[0], G.clearColor[1], G.clearColor[2], G.clearColor[3])
     glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT)
 
+
 def drawEnd():
     pass
+
 
 have_multisample = None
 have_activeTexture = None
 
+
 def A(*args):
-    if len(args) > 0 and hasattr(args[0], '__iter__'): # Iterable as argument
+    if len(args) > 0 and hasattr(args[0], "__iter__"):  # Iterable as argument
         if len(args) == 1:
             return np.array(list(args), dtype=np.float32)
         else:
             # Flatten arguments into one list
             l = list(args[0])
             for e in args[1:]:
-                if hasattr(e, '__iter__'):
+                if hasattr(e, "__iter__"):
                     l.extend(e)
                 else:
                     l.append(e)
             return np.array(l, dtype=np.float32)
     return np.array(list(args), dtype=np.float32)
 
+
 def OnInit():
     try:
         # Start with writing relevant info to the debug dump in case stuff goes
         # wrong at a later time
         debugdump.dump.appendGL()
-        debugdump.dump.appendMessage("GL.VENDOR: " + str(glGetString(GL_VENDOR), encoding='UTF-8'))
-        debugdump.dump.appendMessage("GL.RENDERER: " + str(glGetString(GL_RENDERER), encoding='UTF-8'))
-        debugdump.dump.appendMessage("GL.VERSION: " + str(glGetString(GL_VERSION), encoding='UTF-8'))
-        debugdump.dump.appendMessage("GLSL.VERSION: " + str(Shader.glslVersionStr(), encoding='UTF-8'))
+        debugdump.dump.appendMessage(
+            "GL.VENDOR: " + str(glGetString(GL_VENDOR), encoding="UTF-8")
+        )
+        debugdump.dump.appendMessage(
+            "GL.RENDERER: " + str(glGetString(GL_RENDERER), encoding="UTF-8")
+        )
+        debugdump.dump.appendMessage(
+            "GL.VERSION: " + str(glGetString(GL_VERSION), encoding="UTF-8")
+        )
+        debugdump.dump.appendMessage(
+            "GLSL.VERSION: " + str(Shader.glslVersionStr(), encoding="UTF-8")
+        )
 
     except Exception as e:
         log.error("Failed to write GL debug info to debug dump: %s", format(str(e)))
 
     global have_multisample
-    if not G.args.get('multisampling', False):
+    if not G.args.get("multisampling", False):
         have_multisample = False
     else:
         have_multisample = glInitMultisampleARB()
@@ -299,7 +355,10 @@ def OnInit():
     try:
         # Number of samples is setup in the QGLWidget context
         nb_samples = glGetInteger(OpenGL.GL.ARB.multisample.GL_SAMPLES_ARB)
-        debugdump.dump.appendMessage("GL.EXTENSION: GL_ARB_multisample %s (%sx samples)" % ("enabled" if have_multisample else "not available", nb_samples))
+        debugdump.dump.appendMessage(
+            "GL.EXTENSION: GL_ARB_multisample %s (%sx samples)"
+            % ("enabled" if have_multisample else "not available", nb_samples)
+        )
     except Exception as e:
         log.error("Failed to write GL debug info to debug dump: %s", format(str(e)))
 
@@ -316,37 +375,43 @@ def OnInit():
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, A(0.0, 0.0, 0.0, 1.0))
 
     # Lights and materials
-    lightPos = A( -10.99, 20.0, 20.0, 1.0)  # Light - Position
-    ambientLight =  A(0.0, 0.0, 0.0, 1.0)   # Light - Ambient Values
-    diffuseLight =  A(1.0, 1.0, 1.0, 1.0)   # Light - Diffuse Values
-    specularLight = A(1.0, 1.0, 1.0, 1.0)   # Light - Specular Values
+    lightPos = A(-10.99, 20.0, 20.0, 1.0)  # Light - Position
+    ambientLight = A(0.0, 0.0, 0.0, 1.0)  # Light - Ambient Values
+    diffuseLight = A(1.0, 1.0, 1.0, 1.0)  # Light - Diffuse Values
+    specularLight = A(1.0, 1.0, 1.0, 1.0)  # Light - Specular Values
 
-    MatAmb = A(0.11, 0.11, 0.11, 1.0)       # Material - Ambient Values
-    MatDif = A(1.0, 1.0, 1.0, 1.0)          # Material - Diffuse Values
-    MatSpc = A(0.2, 0.2, 0.2, 1.0)          # Material - Specular Values
-    MatShn = A(10.0,)                       # Material - Shininess
-    MatEms = A(0.0, 0.0, 0.0, 1.0)          # Material - Emission Values
+    MatAmb = A(0.11, 0.11, 0.11, 1.0)  # Material - Ambient Values
+    MatDif = A(1.0, 1.0, 1.0, 1.0)  # Material - Diffuse Values
+    MatSpc = A(0.2, 0.2, 0.2, 1.0)  # Material - Specular Values
+    MatShn = A(
+        10.0,
+    )  # Material - Shininess
+    MatEms = A(0.0, 0.0, 0.0, 1.0)  # Material - Emission Values
 
-    glEnable(GL_DEPTH_TEST)                                  # Hidden surface removal
+    glEnable(GL_DEPTH_TEST)  # Hidden surface removal
     # glEnable(GL_CULL_FACE)                                   # Inside face removal
     # glEnable(GL_ALPHA_TEST)
     # glAlphaFunc(GL_GREATER, 0.0)
     glDisable(GL_DITHER)
-    glEnable(GL_LIGHTING)                                    # Enable lighting
+    glEnable(GL_LIGHTING)  # Enable lighting
     # TODO set light properties based on selected scene
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambientLight)
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuseLight)
     glLightfv(GL_LIGHT0, GL_SPECULAR, specularLight)
     glLightfv(GL_LIGHT0, GL_POSITION, lightPos)
-    glLightModeli(GL_LIGHT_MODEL_COLOR_CONTROL, GL_SEPARATE_SPECULAR_COLOR) #  If we enable this, we have stronger specular highlights
-    glMaterialfv(GL_FRONT, GL_AMBIENT, MatAmb)               # Set Material Ambience
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, MatDif)               # Set Material Diffuse
-    glMaterialfv(GL_FRONT, GL_SPECULAR, MatSpc)              # Set Material Specular
-    glMaterialfv(GL_FRONT, GL_SHININESS, MatShn)             # Set Material Shininess
-    glMaterialfv(GL_FRONT, GL_EMISSION, MatEms)              # Set Material Emission
+    glLightModeli(
+        GL_LIGHT_MODEL_COLOR_CONTROL, GL_SEPARATE_SPECULAR_COLOR
+    )  #  If we enable this, we have stronger specular highlights
+    glMaterialfv(GL_FRONT, GL_AMBIENT, MatAmb)  # Set Material Ambience
+    glMaterialfv(GL_FRONT, GL_DIFFUSE, MatDif)  # Set Material Diffuse
+    glMaterialfv(GL_FRONT, GL_SPECULAR, MatSpc)  # Set Material Specular
+    glMaterialfv(GL_FRONT, GL_SHININESS, MatShn)  # Set Material Shininess
+    glMaterialfv(GL_FRONT, GL_EMISSION, MatEms)  # Set Material Emission
     glEnable(GL_LIGHT0)
-    glEnable(GL_COLOR_MATERIAL)     # Vertex colors affect materials (lighting is enabled)
-    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE)   # Vertex colors affect ambient and diffuse of material
+    glEnable(GL_COLOR_MATERIAL)  # Vertex colors affect materials (lighting is enabled)
+    glColorMaterial(
+        GL_FRONT, GL_AMBIENT_AND_DIFFUSE
+    )  # Vertex colors affect ambient and diffuse of material
     # glEnable(GL_TEXTURE_2D)
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
     glEnable(GL_BLEND)
@@ -357,14 +422,17 @@ def OnInit():
     glEnableClientState(GL_VERTEX_ARRAY)
     if have_multisample:
         glEnable(GL_MULTISAMPLE)
-        #glSampleCoverage(1.0, GL_FALSE)
+        # glSampleCoverage(1.0, GL_FALSE)
         # TODO probably not needed, is used for GL_SAMPLE_COVERAGE, which we do not use (do not confuse with GL_SAMPLE_ALPHA_TO_COVERAGE)
-        #glSampleCoverageARB(1.0, GL_FALSE)  # TODO flip mask each time
+        # glSampleCoverageARB(1.0, GL_FALSE)  # TODO flip mask each time
 
     global TEX_NOT_FOUND
     TEX_NOT_FOUND = getTexture(NOTFOUND_TEXTURE)
     if TEX_NOT_FOUND in (None, False):
-        log.error('Unable to load texture %s, this might cause errors.', NOTFOUND_TEXTURE)
+        log.error(
+            "Unable to load texture %s, this might cause errors.", NOTFOUND_TEXTURE
+        )
+
 
 def OnExit():
     # Deactivate the pointers to vertex and normal array
@@ -373,6 +441,7 @@ def OnExit():
     # glDisableClientState(GL_TEXTURE_COORD_ARRAY)
     glDisableClientState(GL_COLOR_ARRAY)
     log.message("Exit from event loop\n")
+
 
 def setSceneLighting(scene):
     """
@@ -389,11 +458,11 @@ def setSceneLighting(scene):
             # All lights are simple point lights (only basic parameters)
             light = scene.lights[lIdx]
 
-            lightPos = A(light.position, 1.0)          # Light - Position
-            diffuseLight = A(light.color, 1.0)         # Light - Diffuse
-            specularLight = A(light.specular, 1.0)     # Light - Specular
+            lightPos = A(light.position, 1.0)  # Light - Position
+            diffuseLight = A(light.color, 1.0)  # Light - Diffuse
+            specularLight = A(light.specular, 1.0)  # Light - Specular
             # Always force ambient value of light off (only using global ambient)
-            ambientLight =  A(0.0, 0.0, 0.0, 1.0)      # Light - Ambient
+            ambientLight = A(0.0, 0.0, 0.0, 1.0)  # Light - Ambient
 
             glLightfv(GL_LIGHT0 + lIdx, GL_POSITION, lightPos)
             glLightfv(GL_LIGHT0 + lIdx, GL_DIFFUSE, diffuseLight)
@@ -403,6 +472,7 @@ def setSceneLighting(scene):
             glEnable(GL_LIGHT0 + lIdx)
         else:
             glDisable(GL_LIGHT0 + lIdx)
+
 
 def cameraPosition(camera, eye):
     if not camera.updated:
@@ -414,17 +484,19 @@ def cameraPosition(camera, eye):
     glMatrixMode(GL_MODELVIEW)
     glLoadMatrixd(np.ascontiguousarray(mv.T))
 
+
 def transformObject(obj):
     camera = G.cameras[obj.cameraMode]
     human = G.app.selectedHuman
     m = camera.getModelMatrix(obj)
     glMultMatrixd(np.ascontiguousarray(m.T))
 
+
 def drawMesh(obj):
     if not obj.visibility:
         return
 
-    if G.args.get('fullloggingopengl', False):
+    if G.args.get("fullloggingopengl", False):
         log.debug("Rendering mesh %s", obj.name)
 
     glDepthFunc(GL_LEQUAL)
@@ -449,26 +521,28 @@ def drawMesh(obj):
             else:
                 glBindTexture(GL_TEXTURE_2D, TEX_NOT_FOUND.textureId)
             if have_activeTexture:
-                for gl_tex_idx in range(GL_TEXTURE0 + 1, GL_TEXTURE0 + MAX_TEXTURE_UNITS):
+                for gl_tex_idx in range(
+                    GL_TEXTURE0 + 1, GL_TEXTURE0 + MAX_TEXTURE_UNITS
+                ):
                     glActiveTexture(gl_tex_idx)
                     glBindTexture(GL_TEXTURE_2D, 0)
-                    #glDisable(GL_TEXTURE_2D)
+                    # glDisable(GL_TEXTURE_2D)
                     glBindTexture(GL_TEXTURE_1D, 0)
-                    #glDisable(GL_TEXTURE_1D)
+                    # glDisable(GL_TEXTURE_1D)
         else:
             # Disable all textures (when in fixed function textureless shading mode)
             for gl_tex_idx in range(GL_TEXTURE0, GL_TEXTURE0 + MAX_TEXTURE_UNITS):
                 if have_activeTexture:
                     glActiveTexture(gl_tex_idx)
                 glBindTexture(GL_TEXTURE_2D, 0)
-                #glDisable(GL_TEXTURE_2D)
+                # glDisable(GL_TEXTURE_2D)
                 glBindTexture(GL_TEXTURE_1D, 0)
-                #glDisable(GL_TEXTURE_1D)
+                # glDisable(GL_TEXTURE_1D)
 
     if obj.nTransparentPrimitives:
         # TODO not needed for alpha-to-coverage rendering (it's face order independent)
         # TODO for other pipelines/older harware better to statically sort faces of hair meshes around BBox center
-        #obj.sortFaces()
+        # obj.sortFaces()
         pass
 
     # Fill the array pointers with object mesh data
@@ -502,25 +576,27 @@ def drawMesh(obj):
     if obj.solid:
         # Set material properties
         mat = obj.material
-        MatAmb = A(mat.ambientColor.values, 1.0)         # Material - Ambient
-        MatDif = A(mat.diffuseColor.values, mat.opacity) # Material - Diffuse
-        MatSpc = A(mat.specularColor.values, 1.0)        # Material - Specular
-        MatShn = A(128 * mat.shininess)                  # Material - Shininess
-        MatEms = A(mat.emissiveColor.values, 1.0)        # Material - Emission
+        MatAmb = A(mat.ambientColor.values, 1.0)  # Material - Ambient
+        MatDif = A(mat.diffuseColor.values, mat.opacity)  # Material - Diffuse
+        MatSpc = A(mat.specularColor.values, 1.0)  # Material - Specular
+        MatShn = A(128 * mat.shininess)  # Material - Shininess
+        MatEms = A(mat.emissiveColor.values, 1.0)  # Material - Emission
     else:
         # Wireframe
         # Set some default material properties
-        MatAmb = A(0.11, 0.11, 0.11, 1.0)       # Material - Ambient Values
-        MatDif = A(1.0, 1.0, 1.0, 1.0)          # Material - Diffuse Values
-        MatSpc = A(0.2, 0.2, 0.2, 1.0)          # Material - Specular Values
-        MatShn = A(10.0,)                       # Material - Shininess
-        MatEms = A(0.0, 0.0, 0.0, 1.0)          # Material - Emission Values
+        MatAmb = A(0.11, 0.11, 0.11, 1.0)  # Material - Ambient Values
+        MatDif = A(1.0, 1.0, 1.0, 1.0)  # Material - Diffuse Values
+        MatSpc = A(0.2, 0.2, 0.2, 1.0)  # Material - Specular Values
+        MatShn = A(
+            10.0,
+        )  # Material - Shininess
+        MatEms = A(0.0, 0.0, 0.0, 1.0)  # Material - Emission Values
 
-    glMaterialfv(GL_FRONT, GL_AMBIENT, MatAmb)          # Set Material Ambience
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, MatDif)          # Set Material Diffuse
-    glMaterialfv(GL_FRONT, GL_SPECULAR, MatSpc)         # Set Material Specular
-    glMaterialfv(GL_FRONT, GL_SHININESS, MatShn)        # Set Material Shininess
-    glMaterialfv(GL_FRONT, GL_EMISSION, MatEms)         # Set Material Emission
+    glMaterialfv(GL_FRONT, GL_AMBIENT, MatAmb)  # Set Material Ambience
+    glMaterialfv(GL_FRONT, GL_DIFFUSE, MatDif)  # Set Material Diffuse
+    glMaterialfv(GL_FRONT, GL_SPECULAR, MatSpc)  # Set Material Specular
+    glMaterialfv(GL_FRONT, GL_SHININESS, MatShn)  # Set Material Shininess
+    glMaterialfv(GL_FRONT, GL_EMISSION, MatEms)  # Set Material Emission
 
     if obj.useVertexColors:
         # Vertex colors affect materials (lighting is enabled)
@@ -536,7 +612,14 @@ def drawMesh(obj):
 
         # Set custom attributes
         if obj.shaderObj.requiresVertexTangent():
-            glVertexAttribPointer(obj.shaderObj.vertexTangentAttrId, 4, GL_FLOAT, GL_FALSE, 0, obj.tangents)
+            glVertexAttribPointer(
+                obj.shaderObj.vertexTangentAttrId,
+                4,
+                GL_FLOAT,
+                GL_FALSE,
+                0,
+                obj.tangents,
+            )
             glEnableVertexAttribArray(obj.shaderObj.vertexTangentAttrId)
 
         # TODO
@@ -553,10 +636,17 @@ def drawMesh(obj):
         glDisableClientState(GL_COLOR_ARRAY)
         glColor3f(0.0, 0.0, 0.0)
         glDisable(GL_LIGHTING)
-        glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE)   # Vertex colors affect ambient and diffuse of material
+        glColorMaterial(
+            GL_FRONT, GL_AMBIENT_AND_DIFFUSE
+        )  # Vertex colors affect ambient and diffuse of material
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
 
-        glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], obj.primitives.size, GL_UNSIGNED_INT, obj.primitives)
+        glDrawElements(
+            g_primitiveMap[obj.vertsPerPrimitive - 1],
+            obj.primitives.size,
+            GL_UNSIGNED_INT,
+            obj.primitives,
+        )
 
         glEnableClientState(GL_COLOR_ARRAY)
         glEnable(GL_LIGHTING)
@@ -564,7 +654,12 @@ def drawMesh(obj):
         glEnable(GL_POLYGON_OFFSET_FILL)
         glPolygonOffset(1.0, 1.0)
 
-        glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], obj.primitives.size, GL_UNSIGNED_INT, obj.primitives)
+        glDrawElements(
+            g_primitiveMap[obj.vertsPerPrimitive - 1],
+            obj.primitives.size,
+            GL_UNSIGNED_INT,
+            obj.primitives,
+        )
 
         glDisable(GL_POLYGON_OFFSET_FILL)
         glDisable(GL_COLOR_MATERIAL)
@@ -573,13 +668,18 @@ def drawMesh(obj):
             # Enable alpha-to-coverage (also called CSAA)
             # using the multisample buffer for alpha to coverage disables its use for MSAA (anti-aliasing)
             glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE)
-            #glEnable(GL_SAMPLE_ALPHA_TO_ONE)  # Enable this if transparent objects are too transparent
-            glDisable(GL_BLEND) # Disable alpha blending
+            # glEnable(GL_SAMPLE_ALPHA_TO_ONE)  # Enable this if transparent objects are too transparent
+            glDisable(GL_BLEND)  # Disable alpha blending
         else:
             glDepthMask(GL_FALSE)
         glEnable(GL_ALPHA_TEST)
         glAlphaFunc(GL_GREATER, 0.0)
-        glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], obj.primitives.size, GL_UNSIGNED_INT, obj.primitives)
+        glDrawElements(
+            g_primitiveMap[obj.vertsPerPrimitive - 1],
+            obj.primitives.size,
+            GL_UNSIGNED_INT,
+            obj.primitives,
+        )
         glDisable(GL_ALPHA_TEST)
         if have_multisample and obj.alphaToCoverage:
             glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE)
@@ -589,11 +689,21 @@ def drawMesh(obj):
     elif obj.depthless:
         glDepthMask(GL_FALSE)
         glDisable(GL_DEPTH_TEST)
-        glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], obj.primitives.size, GL_UNSIGNED_INT, obj.primitives)
+        glDrawElements(
+            g_primitiveMap[obj.vertsPerPrimitive - 1],
+            obj.primitives.size,
+            GL_UNSIGNED_INT,
+            obj.primitives,
+        )
         glEnable(GL_DEPTH_TEST)
         glDepthMask(GL_TRUE)
     else:
-        glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], obj.primitives.size, GL_UNSIGNED_INT, obj.primitives)
+        glDrawElements(
+            g_primitiveMap[obj.vertsPerPrimitive - 1],
+            obj.primitives.size,
+            GL_UNSIGNED_INT,
+            obj.primitives,
+        )
 
     if obj.solid and not obj.nTransparentPrimitives:
         glDisableClientState(GL_COLOR_ARRAY)
@@ -602,8 +712,13 @@ def drawMesh(obj):
             if color is None or np.all(color[:3] == 255):
                 continue
             glColor4ub(*color)
-            indices = obj.primitives[start:start+count,:]
-            glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], indices.size, GL_UNSIGNED_INT, indices)
+            indices = obj.primitives[start : start + count, :]
+            glDrawElements(
+                g_primitiveMap[obj.vertsPerPrimitive - 1],
+                indices.size,
+                GL_UNSIGNED_INT,
+                indices,
+            )
         glEnableClientState(GL_COLOR_ARRAY)
 
     # Disable the shader if the driver supports it and there is a shader assigned
@@ -638,6 +753,7 @@ def drawMesh(obj):
 
     glPopMatrix()
 
+
 def pickMesh(obj):
     if not obj.visibility:
         return
@@ -665,8 +781,13 @@ def pickMesh(obj):
     # draw the meshes
     for i, (start, count) in enumerate(obj.groups):
         glColor3ub(*obj.clrid(i))
-        indices = obj.primitives[start:start+count,:]
-        glDrawElements(g_primitiveMap[obj.vertsPerPrimitive-1], indices.size, GL_UNSIGNED_INT, indices)
+        indices = obj.primitives[start : start + count, :]
+        glDrawElements(
+            g_primitiveMap[obj.vertsPerPrimitive - 1],
+            indices.size,
+            GL_UNSIGNED_INT,
+            indices,
+        )
 
     glDisable(GL_CULL_FACE)
 
@@ -675,57 +796,106 @@ def pickMesh(obj):
 
     glPopMatrix()
 
+
 def drawOrPick(pickMode, obj):
     if pickMode:
-        if hasattr(obj, 'pick'):
+        if hasattr(obj, "pick"):
             obj.pick()
     else:
-        if hasattr(obj, 'draw'):
+        if hasattr(obj, "draw"):
             obj.draw()
 
+
 _hasRenderToTexture = None
+
+
 def hasRenderToTexture():
     global _hasRenderToTexture
     if _hasRenderToTexture is None:
-        _hasRenderToTexture = all([
-            bool(glGenFramebuffers), bool(glBindFramebuffer), bool(glFramebufferTexture2D)])
+        _hasRenderToTexture = all(
+            [
+                bool(glGenFramebuffers),
+                bool(glBindFramebuffer),
+                bool(glFramebufferTexture2D),
+            ]
+        )
     return _hasRenderToTexture
+
 
 def hasRenderSkin():
     return hasRenderToTexture()
 
+
 _hasRenderToRenderbuffer = None
+
+
 def hasRenderToRenderbuffer():
     global _hasRenderToRenderbuffer
     if _hasRenderToRenderbuffer is None:
-        _hasRenderToRenderbuffer = all([
-            bool(glGenRenderbuffers), bool(glBindRenderbuffer), bool(glRenderbufferStorage),
-            bool(glGenFramebuffers), bool(glBindFramebuffer), bool(glFramebufferRenderbuffer)])
+        _hasRenderToRenderbuffer = all(
+            [
+                bool(glGenRenderbuffers),
+                bool(glBindRenderbuffer),
+                bool(glRenderbufferStorage),
+                bool(glGenFramebuffers),
+                bool(glBindFramebuffer),
+                bool(glFramebufferRenderbuffer),
+            ]
+        )
     return _hasRenderToRenderbuffer
 
 
-def renderSkin(dst, vertsPerPrimitive, verts, index = None, objectMatrix = None,
-               texture = None, UVs = None, textureMatrix = None,
-               color = None, clearColor = None):
+def renderSkin(
+    dst,
+    vertsPerPrimitive,
+    verts,
+    index=None,
+    objectMatrix=None,
+    texture=None,
+    UVs=None,
+    textureMatrix=None,
+    color=None,
+    clearColor=None,
+):
 
     if isinstance(dst, Texture):
         glBindTexture(GL_TEXTURE_2D, dst.textureId)
     elif isinstance(dst, Image):
-        dst = Texture(image = dst)
+        dst = Texture(image=dst)
     elif isinstance(dst, tuple):
         dimensions = dst
-        dst = Texture(size = dimensions)
+        dst = Texture(size=dimensions)
         if dst.width < dimensions[0] or dst.height < dimensions[1]:
-            raise RuntimeError('Could not allocate render texture with dimensions: %s' % str(dst))
+            raise RuntimeError(
+                "Could not allocate render texture with dimensions: %s" % str(dst)
+            )
     else:
-        raise RuntimeError('Unsupported destination: %r' % dst)
+        raise RuntimeError("Unsupported destination: %r" % dst)
 
     width, height = dst.width, dst.height
 
     framebuffer = safeRun(glGenFramebuffers, 1, fallbacks=(glGenFramebuffersEXT))
-    safeRun(glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT))
-    safeRun(glFramebufferTexture2D, GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst.textureId, 0, fallbacks=(glFramebufferTexture2DEXT))
-    safeRun(glFramebufferTexture2D, GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst.textureId, 0, fallbacks=(glFramebufferTexture2DEXT))
+    safeRun(
+        glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT)
+    )
+    safeRun(
+        glFramebufferTexture2D,
+        GL_DRAW_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_TEXTURE_2D,
+        dst.textureId,
+        0,
+        fallbacks=(glFramebufferTexture2DEXT),
+    )
+    safeRun(
+        glFramebufferTexture2D,
+        GL_READ_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_TEXTURE_2D,
+        dst.textureId,
+        0,
+        fallbacks=(glFramebufferTexture2DEXT),
+    )
 
     if clearColor is not None:
         glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3])
@@ -780,9 +950,11 @@ def renderSkin(dst, vertsPerPrimitive, verts, index = None, objectMatrix = None,
         glLoadTransposeMatrixd(textureMatrix)
 
     if index is not None:
-        glDrawElements(g_primitiveMap[vertsPerPrimitive-1], index.size, GL_UNSIGNED_INT, index)
+        glDrawElements(
+            g_primitiveMap[vertsPerPrimitive - 1], index.size, GL_UNSIGNED_INT, index
+        )
     else:
-        glDrawArrays(g_primitiveMap[vertsPerPrimitive-1], 0, verts[:,:,0].size)
+        glDrawArrays(g_primitiveMap[vertsPerPrimitive - 1], 0, verts[:, :, 0].size)
 
     if textureMatrix is not None:
         glMatrixMode(GL_TEXTURE)
@@ -809,28 +981,51 @@ def renderSkin(dst, vertsPerPrimitive, verts, index = None, objectMatrix = None,
 
     glDisableClientState(GL_TEXTURE_COORD_ARRAY)
 
-    surface = np.empty((height, width, 4), dtype = np.uint8)
+    surface = np.empty((height, width, 4), dtype=np.uint8)
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, surface)
-    surface = Image(data = np.ascontiguousarray(surface[::-1,:,:3]))
+    surface = Image(data=np.ascontiguousarray(surface[::-1, :, :3]))
 
-    safeRun(glFramebufferTexture2D, GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0, fallbacks=(glFramebufferTexture2DEXT))
-    safeRun(glFramebufferTexture2D, GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0, fallbacks=(glFramebufferTexture2DEXT))
+    safeRun(
+        glFramebufferTexture2D,
+        GL_DRAW_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_TEXTURE_2D,
+        0,
+        0,
+        fallbacks=(glFramebufferTexture2DEXT),
+    )
+    safeRun(
+        glFramebufferTexture2D,
+        GL_READ_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_TEXTURE_2D,
+        0,
+        0,
+        fallbacks=(glFramebufferTexture2DEXT),
+    )
     safeRun(glBindFramebuffer, GL_FRAMEBUFFER, 0, fallbacks=(glBindFramebufferEXT))
-    safeRun(glDeleteFramebuffers, np.array([framebuffer]), fallbacks=(glDeleteFramebuffersEXT))
+    safeRun(
+        glDeleteFramebuffers,
+        np.array([framebuffer]),
+        fallbacks=(glDeleteFramebuffersEXT),
+    )
     glBindTexture(GL_TEXTURE_2D, 0)
 
     return surface
 
-def renderToBuffer(width, height, productionRender = True):
+
+def renderToBuffer(width, height, productionRender=True):
     """
     Perform offscreen render and return the pixelbuffer.
-    Verify whether OpenGL drivers support renderbuffers using 
+    Verify whether OpenGL drivers support renderbuffers using
     hasRenderToRenderbuffer().
     """
     # Create and bind framebuffer
     framebuffer = safeRun(glGenFramebuffers, 1, fallbacks=(glGenFramebuffersEXT))
-    #glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer)
-    safeRun(glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT))
+    # glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer)
+    safeRun(
+        glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT)
+    )
 
     # Now that framebuffer is bound, verify whether dimensions are within max supported dimensions
     maxWidth, maxHeight = glGetInteger(GL_MAX_VIEWPORT_DIMS)
@@ -844,26 +1039,84 @@ def renderToBuffer(width, height, productionRender = True):
         width = int(height / aspect)
 
     # Create and bind renderbuffers
-    renderbuffer = safeRun(glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT))    # We need a renderbuffer for both color and depth
-    depthRenderbuffer = safeRun(glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT))
-    safeRun(glBindRenderbuffer, GL_RENDERBUFFER, renderbuffer, fallbacks=(glBindRenderbufferEXT))
+    renderbuffer = safeRun(
+        glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)
+    )  # We need a renderbuffer for both color and depth
+    depthRenderbuffer = safeRun(
+        glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)
+    )
+    safeRun(
+        glBindRenderbuffer,
+        GL_RENDERBUFFER,
+        renderbuffer,
+        fallbacks=(glBindRenderbufferEXT),
+    )
     global have_multisample
     if have_multisample:
-        safeRun(glRenderbufferStorageMultisample, GL_RENDERBUFFER, 4, GL_RGBA, width, height, fallbacks=(glRenderbufferStorageMultisampleEXT))
+        safeRun(
+            glRenderbufferStorageMultisample,
+            GL_RENDERBUFFER,
+            4,
+            GL_RGBA,
+            width,
+            height,
+            fallbacks=(glRenderbufferStorageMultisampleEXT),
+        )
     else:
-        safeRun(glRenderbufferStorage, GL_RENDERBUFFER, GL_RGBA, width, height, fallbacks=(glRenderbufferStorageEXT))
-    safeRun(glFramebufferRenderbuffer, GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, renderbuffer, fallbacks=(glFramebufferRenderbufferEXT))
+        safeRun(
+            glRenderbufferStorage,
+            GL_RENDERBUFFER,
+            GL_RGBA,
+            width,
+            height,
+            fallbacks=(glRenderbufferStorageEXT),
+        )
+    safeRun(
+        glFramebufferRenderbuffer,
+        GL_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_RENDERBUFFER,
+        renderbuffer,
+        fallbacks=(glFramebufferRenderbufferEXT),
+    )
 
-    safeRun(glBindRenderbuffer, GL_RENDERBUFFER, depthRenderbuffer, fallbacks=(glBindRenderbufferEXT))
+    safeRun(
+        glBindRenderbuffer,
+        GL_RENDERBUFFER,
+        depthRenderbuffer,
+        fallbacks=(glBindRenderbufferEXT),
+    )
     if have_multisample:
-        safeRun(glRenderbufferStorageMultisample, GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT16, width, height, fallbacks=(glRenderbufferStorageMultisampleEXT))
+        safeRun(
+            glRenderbufferStorageMultisample,
+            GL_RENDERBUFFER,
+            4,
+            GL_DEPTH_COMPONENT16,
+            width,
+            height,
+            fallbacks=(glRenderbufferStorageMultisampleEXT),
+        )
     else:
-        safeRun(glRenderbufferStorage, GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height, fallbacks=(glRenderbufferStorageEXT))
-    safeRun(glFramebufferRenderbuffer, GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRenderbuffer, fallbacks=(glFramebufferRenderbufferEXT))
+        safeRun(
+            glRenderbufferStorage,
+            GL_RENDERBUFFER,
+            GL_DEPTH_COMPONENT16,
+            width,
+            height,
+            fallbacks=(glRenderbufferStorageEXT),
+        )
+    safeRun(
+        glFramebufferRenderbuffer,
+        GL_FRAMEBUFFER,
+        GL_DEPTH_ATTACHMENT,
+        GL_RENDERBUFFER,
+        depthRenderbuffer,
+        fallbacks=(glFramebufferRenderbufferEXT),
+    )
 
     # TODO check with glCheckFramebufferStatus ?
     if not glCheckFramebufferStatus(GL_FRAMEBUFFER):
-        pass # TODO
+        pass  # TODO
 
     # Adapt camera projection matrix to framebuffer size
     oldWidth = G.windowWidth
@@ -875,7 +1128,7 @@ def renderToBuffer(width, height, productionRender = True):
 
     # Neutral background color
     oldClearColor = G.clearColor
-    G.clearColor = (0.5,0.5,0.5, 1)
+    G.clearColor = (0.5, 0.5, 0.5, 1)
 
     # Draw scene as usual
     draw(productionRender)
@@ -884,35 +1137,95 @@ def renderToBuffer(width, height, productionRender = True):
 
     if have_multisample:
         # If we have drawn to a multisample renderbuffer, we need to transfer it to a simple buffer to read it
-        downsampledFramebuffer = safeRun(glGenFramebuffers, 1, fallbacks=(glGenFramebuffersEXT))
-        safeRun(glBindFramebuffer, GL_READ_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT))       # Multisampled FBO
-        safeRun(glBindFramebuffer, GL_DRAW_FRAMEBUFFER, downsampledFramebuffer, fallbacks=(glBindFramebufferEXT)) # Regular FBO
-        regularRenderbuffer = safeRun(glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)) 
-        safeRun(glBindRenderbuffer, GL_RENDERBUFFER, regularRenderbuffer, fallbacks=(glBindRenderbufferEXT))
-        safeRun(glRenderbufferStorage, GL_RENDERBUFFER, GL_RGBA, width, height, fallbacks=(glRenderbufferStorageEXT))
-        safeRun(glFramebufferRenderbuffer, GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, regularRenderbuffer, fallbacks=(glFramebufferRenderbufferEXT))
-        glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST)
+        downsampledFramebuffer = safeRun(
+            glGenFramebuffers, 1, fallbacks=(glGenFramebuffersEXT)
+        )
+        safeRun(
+            glBindFramebuffer,
+            GL_READ_FRAMEBUFFER,
+            framebuffer,
+            fallbacks=(glBindFramebufferEXT),
+        )  # Multisampled FBO
+        safeRun(
+            glBindFramebuffer,
+            GL_DRAW_FRAMEBUFFER,
+            downsampledFramebuffer,
+            fallbacks=(glBindFramebufferEXT),
+        )  # Regular FBO
+        regularRenderbuffer = safeRun(
+            glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)
+        )
+        safeRun(
+            glBindRenderbuffer,
+            GL_RENDERBUFFER,
+            regularRenderbuffer,
+            fallbacks=(glBindRenderbufferEXT),
+        )
+        safeRun(
+            glRenderbufferStorage,
+            GL_RENDERBUFFER,
+            GL_RGBA,
+            width,
+            height,
+            fallbacks=(glRenderbufferStorageEXT),
+        )
+        safeRun(
+            glFramebufferRenderbuffer,
+            GL_FRAMEBUFFER,
+            GL_COLOR_ATTACHMENT0,
+            GL_RENDERBUFFER,
+            regularRenderbuffer,
+            fallbacks=(glFramebufferRenderbufferEXT),
+        )
+        glBlitFramebuffer(
+            0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST
+        )
 
         # Dealloc what we no longer need
-        safeRun(glDeleteFramebuffers, np.array([framebuffer]), fallbacks=(glDeleteFramebuffersEXT))
+        safeRun(
+            glDeleteFramebuffers,
+            np.array([framebuffer]),
+            fallbacks=(glDeleteFramebuffersEXT),
+        )
         framebuffer = downsampledFramebuffer
         del downsampledFramebuffer
-        safeRun(glDeleteRenderbuffers, 1, np.array([renderbuffer]), fallbacks=(glDeleteRenderbuffersEXT))
+        safeRun(
+            glDeleteRenderbuffers,
+            1,
+            np.array([renderbuffer]),
+            fallbacks=(glDeleteRenderbuffersEXT),
+        )
         renderbuffer = regularRenderbuffer
         del regularRenderbuffer
 
     # Read pixels
-    surface = np.empty((height, width, 4), dtype = np.uint8)
-    safeRun(glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT))
+    surface = np.empty((height, width, 4), dtype=np.uint8)
+    safeRun(
+        glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT)
+    )
     glReadBuffer(GL_COLOR_ATTACHMENT0)
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, surface)
 
-    surface = Image(data = np.ascontiguousarray(surface[::-1,:,[2,1,0]]))
+    surface = Image(data=np.ascontiguousarray(surface[::-1, :, [2, 1, 0]]))
 
     # Unbind frame buffer
-    safeRun(glDeleteFramebuffers, np.array([framebuffer]), fallbacks=(glDeleteFramebuffersEXT))
-    safeRun(glDeleteRenderbuffers, 1, np.array([renderbuffer]), fallbacks=(glDeleteRenderbuffersEXT))
-    safeRun(glDeleteRenderbuffers, 1, np.array([depthRenderbuffer]), fallbacks=(glDeleteRenderbuffersEXT))
+    safeRun(
+        glDeleteFramebuffers,
+        np.array([framebuffer]),
+        fallbacks=(glDeleteFramebuffersEXT),
+    )
+    safeRun(
+        glDeleteRenderbuffers,
+        1,
+        np.array([renderbuffer]),
+        fallbacks=(glDeleteRenderbuffersEXT),
+    )
+    safeRun(
+        glDeleteRenderbuffers,
+        1,
+        np.array([depthRenderbuffer]),
+        fallbacks=(glDeleteRenderbuffersEXT),
+    )
     safeRun(glBindRenderbuffer, GL_RENDERBUFFER, 0, fallbacks=(glBindRenderbufferEXT))
     safeRun(glBindFramebuffer, GL_FRAMEBUFFER, 0, fallbacks=(glBindFramebufferEXT))
 
@@ -925,16 +1238,19 @@ def renderToBuffer(width, height, productionRender = True):
 
     return surface
 
-def renderAlphaMask(width, height, productionRender = True):
+
+def renderAlphaMask(width, height, productionRender=True):
     """
     Render alpha mask suiting a render to renderbufer, that can be used for
     compositing the produced render on a background.
-    Verify whether OpenGL drivers support renderbuffers using 
+    Verify whether OpenGL drivers support renderbuffers using
     hasRenderToRenderbuffer().
     """
     # Create and bind framebuffer
     framebuffer = safeRun(glGenFramebuffers, 1, fallbacks=(glGenFramebuffersEXT))
-    safeRun(glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT))
+    safeRun(
+        glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT)
+    )
 
     # Now that framebuffer is bound, verify whether dimensions are within max supported dimensions
     maxWidth, maxHeight = glGetInteger(GL_MAX_VIEWPORT_DIMS)
@@ -942,19 +1258,61 @@ def renderAlphaMask(width, height, productionRender = True):
     height = min(height, maxHeight)
 
     # Create and bind renderbuffers
-    renderbuffer = safeRun(glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT))     # We need a renderbuffer for both color and depth
-    depthRenderbuffer = safeRun(glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)) 
-    safeRun(glBindRenderbuffer, GL_RENDERBUFFER, renderbuffer, fallbacks=(glBindRenderbufferEXT))
-    safeRun(glRenderbufferStorage, GL_RENDERBUFFER, GL_RGBA, width, height, fallbacks=(glRenderbufferStorageEXT))
-    safeRun(glFramebufferRenderbuffer, GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, renderbuffer, fallbacks=(glFramebufferRenderbufferEXT))
+    renderbuffer = safeRun(
+        glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)
+    )  # We need a renderbuffer for both color and depth
+    depthRenderbuffer = safeRun(
+        glGenRenderbuffers, 1, fallbacks=(glGenRenderbuffersEXT)
+    )
+    safeRun(
+        glBindRenderbuffer,
+        GL_RENDERBUFFER,
+        renderbuffer,
+        fallbacks=(glBindRenderbufferEXT),
+    )
+    safeRun(
+        glRenderbufferStorage,
+        GL_RENDERBUFFER,
+        GL_RGBA,
+        width,
+        height,
+        fallbacks=(glRenderbufferStorageEXT),
+    )
+    safeRun(
+        glFramebufferRenderbuffer,
+        GL_FRAMEBUFFER,
+        GL_COLOR_ATTACHMENT0,
+        GL_RENDERBUFFER,
+        renderbuffer,
+        fallbacks=(glFramebufferRenderbufferEXT),
+    )
 
-    safeRun(glBindRenderbuffer, GL_RENDERBUFFER, depthRenderbuffer, fallbacks=(glBindRenderbufferEXT))
-    safeRun(glRenderbufferStorage, GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height, fallbacks=(glRenderbufferStorageEXT))
-    safeRun(glFramebufferRenderbuffer, GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRenderbuffer, fallbacks=(glFramebufferRenderbufferEXT))
+    safeRun(
+        glBindRenderbuffer,
+        GL_RENDERBUFFER,
+        depthRenderbuffer,
+        fallbacks=(glBindRenderbufferEXT),
+    )
+    safeRun(
+        glRenderbufferStorage,
+        GL_RENDERBUFFER,
+        GL_DEPTH_COMPONENT16,
+        width,
+        height,
+        fallbacks=(glRenderbufferStorageEXT),
+    )
+    safeRun(
+        glFramebufferRenderbuffer,
+        GL_FRAMEBUFFER,
+        GL_DEPTH_ATTACHMENT,
+        GL_RENDERBUFFER,
+        depthRenderbuffer,
+        fallbacks=(glFramebufferRenderbufferEXT),
+    )
 
     # TODO check with glCheckFramebufferStatus ?
     if not glCheckFramebufferStatus(GL_FRAMEBUFFER):
-        pass # TODO
+        pass  # TODO
 
     # Adapt camera projection matrix to framebuffer size
     oldWidth = G.windowWidth
@@ -983,31 +1341,48 @@ def renderAlphaMask(width, height, productionRender = True):
     G.clearColor = oldClearColor
 
     # Read pixels
-    surface = np.empty((height, width, 4), dtype = np.uint8)
-    safeRun(glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT))
+    surface = np.empty((height, width, 4), dtype=np.uint8)
+    safeRun(
+        glBindFramebuffer, GL_FRAMEBUFFER, framebuffer, fallbacks=(glBindFramebufferEXT)
+    )
     glReadBuffer(GL_COLOR_ATTACHMENT0)
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, surface)
 
     # Grayscale image of only alpha channel
-    surface = Image(data = np.ascontiguousarray(surface[::-1,:,[3,3,3]]))
+    surface = Image(data=np.ascontiguousarray(surface[::-1, :, [3, 3, 3]]))
 
     # Unbind frame buffer
-    safeRun(glDeleteFramebuffers, np.array([framebuffer]), fallbacks=(glDeleteFramebuffersEXT))
-    safeRun(glDeleteRenderbuffers, 1, np.array([renderbuffer]), fallbacks=(glDeleteRenderbuffersEXT))
-    safeRun(glDeleteRenderbuffers, 1, np.array([depthRenderbuffer]), fallbacks=(glDeleteRenderbuffersEXT))
+    safeRun(
+        glDeleteFramebuffers,
+        np.array([framebuffer]),
+        fallbacks=(glDeleteFramebuffersEXT),
+    )
+    safeRun(
+        glDeleteRenderbuffers,
+        1,
+        np.array([renderbuffer]),
+        fallbacks=(glDeleteRenderbuffersEXT),
+    )
+    safeRun(
+        glDeleteRenderbuffers,
+        1,
+        np.array([depthRenderbuffer]),
+        fallbacks=(glDeleteRenderbuffersEXT),
+    )
     safeRun(glBindRenderbuffer, GL_RENDERBUFFER, 0, fallbacks=(glBindRenderbufferEXT))
     safeRun(glBindFramebuffer, GL_FRAMEBUFFER, 0, fallbacks=(glBindFramebufferEXT))
 
     # Restore viewport dimensions to those of the window
     G.windowWidth = oldWidth
     G.windowHeight = oldHeight
-    #glPushAttrib(GL_VIEWPORT_BIT)
+    # glPushAttrib(GL_VIEWPORT_BIT)
     glPopAttrib()
     glViewport(0, 0, oldWidth, oldHeight)
 
     return surface
 
-def drawMeshes(pickMode, productionRender = False):
+
+def drawMeshes(pickMode, productionRender=False):
     if G.world is None:
         return
 
@@ -1016,23 +1391,23 @@ def drawMeshes(pickMode, productionRender = False):
     G.cameras[0].updated = False
 
     # Draw all objects contained by G.world
-    for obj in sorted(G.world, key = (lambda obj: obj.priority)):
+    for obj in sorted(G.world, key=(lambda obj: obj.priority)):
         if productionRender and obj.excludeFromProduction:
             continue
         camera = G.cameras[obj.cameraMode]
         if camera.stereoMode:
-            glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE) # Red
+            glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_TRUE)  # Red
             cameraPosition(camera, 1)
             drawOrPick(pickMode, obj)
             glClear(GL_DEPTH_BUFFER_BIT)
-            glColorMask(GL_FALSE, GL_TRUE, GL_TRUE, GL_TRUE) # Cyan
+            glColorMask(GL_FALSE, GL_TRUE, GL_TRUE, GL_TRUE)  # Cyan
             cameraPosition(camera, 2)
             drawOrPick(pickMode, obj)
             # To prevent the GUI from overwritting the red model, we need to render it again in the z-buffer
-            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE) # None, only z-buffer
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE)  # None, only z-buffer
             cameraPosition(camera, 1)
             drawOrPick(pickMode, obj)
-            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE) # All
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE)  # All
             cameraMode = None
         else:
             if cameraMode != obj.cameraMode:
@@ -1040,21 +1415,29 @@ def drawMeshes(pickMode, productionRender = False):
                 cameraMode = obj.cameraMode
             drawOrPick(pickMode, obj)
 
-def _draw(productionRender = False):
+
+def _draw(productionRender=False):
     drawBegin()
     drawMeshes(False, productionRender)
     drawEnd()
 
-def draw(productionRender = False):
+
+def draw(productionRender=False):
+    # avoid calling GL when there is no current context (may happen when the
+    # widget is being destroyed or after quitting)
+    if not _hasValidGLContext():
+        return False
+
     try:
         if profiler.active():
-            profiler.accum('_draw()', globals(), locals())
+            profiler.accum("_draw()", globals(), locals())
         else:
             _draw(productionRender)
         return True
     except Exception:
-        log.error('gl.draw', exc_info=True)
+        log.error("gl.draw", exc_info=True)
         return False
+
 
 def renderToCanvas():
     if draw():

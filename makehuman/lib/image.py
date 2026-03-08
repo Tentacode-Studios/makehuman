@@ -40,16 +40,17 @@ The image module contains the definition of the Image class, the container
 that MakeHuman uses to handle images.
 
 Image only depends on the numpy library, except when image have to be loaded
-or saved to disk, in which case one of the back-ends (Qt or PIL) will have to 
+or saved to disk, in which case one of the back-ends (Qt or PIL) will have to
 be imported (import happens only when needed).
 """
 
 import numpy as np
 import time
 
-FILTER_NEAREST = 0   # Nearest neighbour resize filter (no real filtering)
+FILTER_NEAREST = 0  # Nearest neighbour resize filter (no real filtering)
 FILTER_BILINEAR = 1  # Bi-linear filter
-FILTER_BICUBIC = 2   # Bi-cubic filter (not supported with Qt, only PIL)
+FILTER_BICUBIC = 2  # Bi-cubic filter (not supported with Qt, only PIL)
+
 
 class Image(object):
     """Container for handling images.
@@ -59,9 +60,9 @@ class Image(object):
     providing information about the loaded image.
     """
 
-    def __init__(self, path=None,
-            width=0, height=0, bitsPerPixel=32,
-            components=None, data=None):
+    def __init__(
+        self, path=None, width=0, height=0, bitsPerPixel=32, components=None, data=None
+    ):
         """Image constructor.
 
         The Image can be constructed by an existing Image, a QPixmap, a
@@ -96,7 +97,7 @@ class Image(object):
             elif _isQPixmap(path):
                 qimg = path.toImage()
                 self._data = image_lib.load(qimg)
-            else:   # Path string / QImage.
+            else:  # Path string / QImage.
                 self._data = image_lib.load(path)
                 self.sourcePath = path
         elif data is not None:
@@ -106,7 +107,7 @@ class Image(object):
                 self._data = data.data
             elif isinstance(data, str):
                 self._data = image_lib.load(data)
-            else:   # Data array.
+            else:  # Data array.
                 self._data = data
         else:
             self._is_empty = True
@@ -170,7 +171,7 @@ class Image(object):
         """
         import image_qt
 
-        #return image_qt.toQImage(self.data)
+        # return image_qt.toQImage(self.data)
         # ^ For some reason caused problems
         if self.components == 1:
             fmt = image_qt.QtGui.QImage.Format_RGB888
@@ -182,10 +183,10 @@ class Image(object):
             data = np.repeat(self.data[:, :, 0], 3).reshape((h, w, 3))
             data = np.insert(data, 3, values=self.data[:, :, 1], axis=2)
         elif self.components == 3:
-            '''
+            """
             fmt = image_qt.QtGui.QImage.Format_RGB888
             data = self.data
-            '''
+            """
             # The above causes a crash or misaligned image raster.
             # Quickhack solution:
             fmt = image_qt.QtGui.QImage.Format_ARGB32
@@ -197,8 +198,8 @@ class Image(object):
             # components == 4
             fmt = image_qt.QtGui.QImage.Format_ARGB32
             data = self.data
-        return image_qt.QtGui.QImage(
-            data.tostring(), data.shape[1], data.shape[0], fmt)
+        # use tobytes() instead of deprecated tostring()
+        return image_qt.QtGui.QImage(data.tobytes(), data.shape[1], data.shape[0], fmt)
 
     def resized_(self, width, height, filter=FILTER_NEAREST):
         if filter == FILTER_NEAREST:
@@ -210,6 +211,7 @@ class Image(object):
         else:
             # NOTE: bi-cubic filtering is not supported by Qt, use bi-linear
             import image_qt
+
             return image_qt.resized(self, width, height, filter=filter)
 
     def resized(self, width, height, filter=FILTER_NEAREST):
@@ -230,7 +232,7 @@ class Image(object):
             raise ValueError("source image has incorrect format")
         sw = min(sw, dw - x)
         sh = min(sh, dh - y)
-        self._data[y: y + sh, x: x + sw, :] = other._data
+        self._data[y : y + sh, x : x + sw, :] = other._data
 
         self.modified = time.time()
 
@@ -342,15 +344,17 @@ class Image(object):
         """
         return self._is_empty
 
+
 def _isQPixmap(img):
     """
     Test an image object for being a QPixmap instance if Qt libraries were
     loaded in the application.
     """
     import sys
+
     if "PyQt5" in list(sys.modules.keys()):
         import image_qt
+
         return isinstance(img, image_qt.QtGui.QPixmap)
     else:
         return False
-
